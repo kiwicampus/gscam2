@@ -94,6 +94,23 @@ export GSCAM_CONFIG=videotestsrc pattern=snow ! video/x-raw,width=1280,height=72
 ros2 run gscam2 gscam_main  --ros-args -p gst_plugin_path:="/home/me/myplugins"
 ~~~
 
+### NVIDIA nvvidconv and NvBufSurface
+
+When using **nvvidconv** (or other NVIDIA GStreamer elements), buffers may be **NvBufSurface** (GPU/DMABUF). gscam2 currently reads frames with **`gst_memory_map()`**, which works when the buffer is in CPU-addressable memory.
+
+- **If the pipeline already gives you CPU memory:** Many setups (e.g. nvvidconv → appsink) negotiate or copy to system memory, so `gst_memory_map()` works and no change is needed. Use `image_encoding: "rgba8"` or `"bgra8"` for the typical nvvidconv output (RGBA/BGRx).
+- **If you get NvBufSurface (DMABUF) at the sink:** Then the mapped pointer may be invalid or the buffer layout may be different (planes, pitch). To read those buffers you need the **NvBufSurface API** (DeepStream/Jetson): get the DMABUF fd from the GstBuffer, call `NvBufSurfaceFromFd()`, then `NvBufSurfaceMap()` (or `NvBufSurface2Raw()`) to get CPU-accessible data and copy it into the ROS message. That path is not implemented in gscam2 yet; it would require an optional dependency on `libnvbufsurface` and a code path that uses the fd when present.
+
+**Building with NvBufSurface support (Jetson/DeepStream):** If the buffers that reach the appsink are NvBufSurface (DMABUF), build with the optional NvBufSurface path:
+
+```bash
+colcon build --packages-select gscam2 --cmake-args -DGSCAM2_USE_NVBUF=ON
+```
+
+Requirements when `GSCAM2_USE_NVBUF=ON`: `gstreamer-allocators-1.0` (for fd-backed memory), and `nvbufsurface` (Jetson multimedia API or DeepStream SDK). The node will then try to get the DMABUF fd from the GStreamer buffer, call `NvBufSurfaceFromFd`, and copy frame data with `NvBufSurface2Raw` into the ROS Image message. If the buffer is not fd-backed or NvBufSurface fails, it falls back to the usual `gst_memory_map()` path.
+
+**Practical suggestion:** Try your pipeline as-is (e.g. `... ! nvvidconv ! video/x-raw,format=RGBA ! appsink` with `image_encoding: "rgba8"`). If you see correct images, the plugin may be handing CPU-friendly memory. If you see crashes or corrupt frames, build with `GSCAM2_USE_NVBUF=ON` so the node can read NvBufSurface buffers.
+
 ## Parameters
 
 | Parameter | Type | Default | Notes |

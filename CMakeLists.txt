@@ -19,10 +19,22 @@ endif()
 # Default to SHARED, but user can turn this off to get STATIC
 option(BUILD_SHARED_LIBS "Build using shared libraries" ON)
 
+# Optional: read NvBufSurface (GPU) buffers from nvvidconv etc. (Jetson/DeepStream)
+option(GSCAM2_USE_NVBUF "Use NvBufSurface to read GPU buffers (Jetson/DeepStream)" ON)
+
 # Gstreamer doesn't provide CMake files
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GSTREAMER REQUIRED gstreamer-1.0 IMPORTED_TARGET)
 pkg_check_modules(GST_APP REQUIRED gstreamer-app-1.0 IMPORTED_TARGET)
+if(GSCAM2_USE_NVBUF)
+  pkg_check_modules(GST_ALLOCATORS REQUIRED gstreamer-allocators-1.0 IMPORTED_TARGET)
+  find_library(NVBUF_LIBRARY nvbufsurface)
+  find_path(NVBUF_INCLUDE_DIR nvbufsurface.h
+    PATHS /usr/include /usr/local/include)
+  if(NOT NVBUF_LIBRARY OR NOT NVBUF_INCLUDE_DIR)
+    message(FATAL_ERROR "GSCAM2_USE_NVBUF=ON but nvbufsurface not found. Install Jetson multimedia API or DeepStream SDK.")
+  endif()
+endif()
 
 find_package(ament_cmake REQUIRED)
 find_package(camera_calibration_parsers REQUIRED)
@@ -47,12 +59,15 @@ add_library(gscam_node src/gscam_node.cpp)
 add_library(gscam2::gscam_node ALIAS gscam_node)
 
 target_compile_definitions(gscam_node
-  PRIVATE "COMPOSITION_BUILDING_DLL")
+  PRIVATE "COMPOSITION_BUILDING_DLL"
+  $<$<BOOL:${GSCAM2_USE_NVBUF}>:GSCAM2_USE_NVBUF>)
 
 target_include_directories(gscam_node
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>)
+    $<INSTALL_INTERFACE:include>
+  PRIVATE
+    $<$<BOOL:${GSCAM2_USE_NVBUF}>:${NVBUF_INCLUDE_DIR}>)
 
 target_link_libraries(gscam_node
   PRIVATE
@@ -61,6 +76,8 @@ target_link_libraries(gscam_node
     class_loader::class_loader
     rclcpp_components::component
     sensor_msgs::sensor_msgs_library
+    $<$<BOOL:${GSCAM2_USE_NVBUF}>:PkgConfig::GST_ALLOCATORS>
+    $<$<BOOL:${GSCAM2_USE_NVBUF}>:${NVBUF_LIBRARY}>
   PUBLIC
     rclcpp::rclcpp
     PkgConfig::GSTREAMER
