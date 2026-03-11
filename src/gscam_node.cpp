@@ -174,6 +174,16 @@ bool GSCamNode::impl::create_pipeline()
       "video/x-raw",
       "format", G_TYPE_STRING, "YUY2",
       nullptr);
+  } else if (cxt_.image_encoding_ == sensor_msgs::image_encodings::RGBA8) {
+    caps = gst_caps_new_simple(
+      "video/x-raw",
+      "format", G_TYPE_STRING, "RGBA",
+      nullptr);
+  } else if (cxt_.image_encoding_ == sensor_msgs::image_encodings::BGRA8) {
+    caps = gst_caps_new_simple(
+      "video/x-raw",
+      "format", G_TYPE_STRING, "BGRx",
+      nullptr);
   } else if (cxt_.image_encoding_ == sensor_msgs::image_encodings::BAYER_RGGB8) {
     caps = gst_caps_new_simple(
       "video/x-bayer",
@@ -316,6 +326,11 @@ unsigned int bytes_per_pixel(const std::string & encoding)
 {
   if (encoding == sensor_msgs::image_encodings::RGB8) {
     return 3;
+  } else if (
+    encoding == sensor_msgs::image_encodings::RGBA8 ||
+    encoding == sensor_msgs::image_encodings::BGRA8)
+  {
+    return 4;
   } else if (
     encoding == sensor_msgs::image_encodings::MONO8 ||
     encoding == sensor_msgs::image_encodings::BAYER_RGGB8 ||
@@ -491,6 +506,8 @@ void GSCamNode::impl::restart()
   }
 
   if (cxt_.image_encoding_ != sensor_msgs::image_encodings::RGB8 &&
+    cxt_.image_encoding_ != sensor_msgs::image_encodings::RGBA8 &&
+    cxt_.image_encoding_ != sensor_msgs::image_encodings::BGRA8 &&
     cxt_.image_encoding_ != sensor_msgs::image_encodings::MONO8 &&
     cxt_.image_encoding_ != sensor_msgs::image_encodings::YUV422_YUY2 &&
     cxt_.image_encoding_ != sensor_msgs::image_encodings::BAYER_RGGB8 &&
