@@ -103,16 +103,46 @@ ros2 run gscam2 gscam_main  --ros-args -p gst_plugin_path:="/home/me/myplugins"
 | `sync_sink` | bool | True | Enable GstBaseSink synchronization |
 | `preroll` | bool | False | Transition to GST_STATE_PLAYING twice |
 | `use_gst_timestamps` | bool | False | Use gst time instead of ROS time |
-| `image_encoding` | string | `sensor_msgs::image_encodings::RGB8` |  ROS image encoding |
+| `image_encoding` | string | `sensor_msgs::image_encodings::RGB8` |  ROS image encoding; use `"jpeg"` or `"h264"` for compressed streams |
 | `camera_info_url` | string | | URL to camera info file, e.g., `file:///path/to/file` |
 | `camera_name` | string | | Replaces `${NAME}` in the URL  |
 | `frame_id` | string | camera_frame | Camera frame ID |
 | `skip` | int | 0 | Skip n frames for each frame sent; useful for reducing frame rates |
+| `publish_foxglove_compressed_video` | bool | true | If `image_encoding` is `h264`, also publish `foxglove_msgs/CompressedVideo` for Foxglove Studio |
+| `foxglove_compressed_video_topic` | string | `foxglove_compressed_video` | Topic name for `foxglove_msgs/CompressedVideo` |
 
 ## Topics
 - `camera_info`
-- `image_raw`
-- `image_raw/compressed` - only if image is encoded as a jpeg stream 
+- `image_raw` — uncompressed (`sensor_msgs/Image`)
+- `image_raw/compressed` — if `image_encoding` is `jpeg` or `h264` (`sensor_msgs/CompressedImage` with `format` set to `jpeg` or `h264`)
+- **`foxglove_compressed_video`** (default name) — if `image_encoding` is `h264` and `publish_foxglove_compressed_video` is true: **`foxglove_msgs/CompressedVideo`** with `format: "h264"` for [Foxglove Studio](https://foxglove.dev/) Image / 3D panels
+
+### H.264 and “compressed video”
+
+In ROS 2 there is **no separate standard message** named “CompressedVideo”. **H.264 is published on `image_raw/compressed` as `sensor_msgs/CompressedImage`**: the `data` field carries the encoded bitstream (NAL/access units) and `format` is the string `"h264"`. That is the usual pattern for any compressed payload (JPEG, PNG, H.264, etc.).
+
+So **yes, H.264 goes with “compressed”** in the sense of `CompressedImage` — not with `sensor_msgs/Image` (which is for decoded pixels).
+
+What often breaks expectations:
+
+- **`image_transport`** republishers and many tools only treat `format: jpeg` or `png` by default. They may **ignore or fail on `format: h264`** unless you add a plugin or a custom subscriber that decodes H.264.
+- The topic name `.../compressed` is the same as for JPEG; the **codec is only in `msg.format`**, not in the topic type.
+
+Set `image_encoding: "h264"` and use a pipeline that outputs `video/x-h264` to the appsink, for example:
+
+```yaml
+gscam_config: "v4l2src device=/dev/video0 ! video/x-h264 ! appsink"
+# or: rtspsrc location=... ! rtph264depay ! video/x-h264 ! appsink
+image_encoding: "h264"
+```
+
+Subscribers must explicitly handle `CompressedImage` with `format == "h264"` (e.g. GStreamer, FFmpeg, hardware decoder, or a node that republishes decoded `sensor_msgs/Image`).
+
+### Foxglove Studio (CompressedVideo)
+
+Foxglove expects **`foxglove_msgs/msg/CompressedVideo`**, not `sensor_msgs/CompressedImage`. With `image_encoding: "h264"`, gscam2 publishes **both**: ROS `CompressedImage` on `image_raw/compressed` and **`foxglove_msgs/CompressedVideo`** on `foxglove_compressed_video` (override with `foxglove_compressed_video_topic`). In Foxglove, add an **Image** panel and subscribe to that topic; the schema is detected automatically over a ROS 2 connection.
+
+Foxglove’s docs recommend **Annex B** H.264 (`0x00 0x00 0x01` start codes). If playback fails, try forcing byte-stream in the pipeline, e.g. `h264parse ! video/x-h264,stream-format=byte-stream,alignment=au ! appsink`. Each message should represent **one decodable frame**; keyframes should include **SPS** (and typically **PPS**) NAL units. Foxglove does not support H.264 with **B-frames** (no lookahead).
 
 ## Camera info file formats
 

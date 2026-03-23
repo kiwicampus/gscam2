@@ -32,6 +32,7 @@ find_package(rclcpp REQUIRED)
 find_package(rclcpp_components REQUIRED)
 find_package(rclpy REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(foxglove_msgs REQUIRED)
 
 # Create ament index resource which references the libraries in the binary dir
 set(node_plugins "")
@@ -54,15 +55,17 @@ target_include_directories(gscam_node
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>)
 
+ament_target_dependencies(gscam_node
+  camera_calibration_parsers
+  camera_info_manager
+  class_loader
+  foxglove_msgs
+  rclcpp
+  rclcpp_components
+  sensor_msgs)
+
 target_link_libraries(gscam_node
-  PRIVATE
-    camera_calibration_parsers::camera_calibration_parsers
-    camera_info_manager::camera_info_manager
-    class_loader::class_loader
-    rclcpp_components::component
-    sensor_msgs::sensor_msgs_library
   PUBLIC
-    rclcpp::rclcpp
     PkgConfig::GSTREAMER
     PkgConfig::GST_APP)
 
@@ -164,6 +167,6 @@ install(DIRECTORY cfg launch
 
 ament_export_targets(gscam2_targets HAS_LIBRARY_TARGET)
 
-ament_export_dependencies(rclcpp sensor_msgs)
+ament_export_dependencies(foxglove_msgs rclcpp sensor_msgs)
 
 ament_package()
