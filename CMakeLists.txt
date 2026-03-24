@@ -65,9 +65,8 @@ ament_target_dependencies(gscam_node
   sensor_msgs)
 
 target_link_libraries(gscam_node
-  PUBLIC
-    PkgConfig::GSTREAMER
-    PkgConfig::GST_APP)
+  PkgConfig::GSTREAMER
+  PkgConfig::GST_APP)
 
 rclcpp_components_register_nodes(gscam_node "gscam2::GSCamNode")
 set(node_plugins "${node_plugins}gscam2::GSCamNode;$<TARGET_FILE:gscam_node>\n")
