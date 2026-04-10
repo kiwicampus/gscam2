@@ -32,6 +32,9 @@ struct GSCamContext
   int64_t skip_{};                // Skip n frames, then send 1
   bool publish_foxglove_compressed_video_{true};  // H.264: also publish foxglove_msgs/CompressedVideo
   std::string foxglove_compressed_video_topic_{"foxglove_compressed_video"};
+  /// When false with image_encoding=h264 and Foxglove enabled, only foxglove_msgs/CompressedVideo is published
+  /// (no sensor_msgs/CompressedImage on image_raw/compressed). Always true for image_encoding=jpeg.
+  bool publish_image_raw_compressed_{false};
 
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr
     on_set_parameters_callback_handle_;
@@ -281,17 +284,43 @@ bool GSCamNode::impl::create_pipeline()
 
   cinfo_pub_ = node_->create_publisher<sensor_msgs::msg::CameraInfo>("camera_info", 1);
   foxglove_compressed_video_pub_.reset();
+  jpeg_pub_.reset();
   if (cxt_.image_encoding_ == "jpeg" || cxt_.image_encoding_ == "h264") {
-    jpeg_pub_ =
-      node_->create_publisher<sensor_msgs::msg::CompressedImage>("image_raw/compressed", 1);
-    if (cxt_.image_encoding_ == "h264" && cxt_.publish_foxglove_compressed_video_) {
+    const bool foxglove_h264 =
+      cxt_.image_encoding_ == "h264" && cxt_.publish_foxglove_compressed_video_;
+    if (!cxt_.publish_image_raw_compressed_ && cxt_.image_encoding_ == "jpeg") {
+      RCLCPP_FATAL(
+        node_->get_logger(),
+        "publish_image_raw_compressed=false is invalid for image_encoding=jpeg");
+      return false;
+    }
+    if (!cxt_.publish_image_raw_compressed_ && cxt_.image_encoding_ == "h264" && !foxglove_h264) {
+      RCLCPP_FATAL(
+        node_->get_logger(),
+        "publish_image_raw_compressed=false requires publish_foxglove_compressed_video=true when "
+        "image_encoding=h264");
+      return false;
+    }
+    if (cxt_.publish_image_raw_compressed_ || cxt_.image_encoding_ == "jpeg") {
+      jpeg_pub_ =
+        node_->create_publisher<sensor_msgs::msg::CompressedImage>("image_raw/compressed", 1);
+    }
+    if (foxglove_h264) {
       foxglove_compressed_video_pub_ =
         node_->create_publisher<foxglove_msgs::msg::CompressedVideo>(
         cxt_.foxglove_compressed_video_topic_, rclcpp::QoS(1).best_effort());
       RCLCPP_INFO(
         node_->get_logger(),
-        "Publishing foxglove_msgs/CompressedVideo on topic '%s' for Foxglove Studio",
-        cxt_.foxglove_compressed_video_topic_.c_str());
+        "Publishing foxglove_msgs/CompressedVideo on topic '%s'%s",
+        cxt_.foxglove_compressed_video_topic_.c_str(),
+        jpeg_pub_ ? " (and sensor_msgs/CompressedImage on image_raw/compressed)" :
+        " only (no image_raw/compressed)");
+    }
+    if (!jpeg_pub_ && !foxglove_compressed_video_pub_) {
+      RCLCPP_FATAL(
+        node_->get_logger(),
+        "No video publisher created (check image_encoding / Foxglove / publish_image_raw_compressed)");
+      return false;
     }
   } else {
     camera_pub_ = node_->create_publisher<sensor_msgs::msg::Image>("image_raw", 1);
@@ -425,12 +454,14 @@ void GSCamNode::impl::process_frame()
   // RCLCPP_INFO(get_logger(), "Image time stamp: %.3f",cinfo->header.stamp.toSec());
   cinfo->header.frame_id = cxt_.frame_id_;
   if (cxt_.image_encoding_ == "jpeg" || cxt_.image_encoding_ == "h264") {
-    auto img = std::make_unique<sensor_msgs::msg::CompressedImage>();
-    img->header = cinfo->header;
-    img->format = cxt_.image_encoding_;
-    img->data.resize(buf_size);
-    std::copy(buf_data, (buf_data) + (buf_size), img->data.begin());
-    jpeg_pub_->publish(std::move(img));
+    if (jpeg_pub_) {
+      auto img = std::make_unique<sensor_msgs::msg::CompressedImage>();
+      img->header = cinfo->header;
+      img->format = cxt_.image_encoding_;
+      img->data.resize(buf_size);
+      std::copy(buf_data, (buf_data) + (buf_size), img->data.begin());
+      jpeg_pub_->publish(std::move(img));
+    }
     if (cxt_.image_encoding_ == "h264" && foxglove_compressed_video_pub_) {
       foxglove_msgs::msg::CompressedVideo fv;
       fv.timestamp = cinfo->header.stamp;
@@ -619,6 +650,8 @@ GSCamNode::GSCamNode(const rclcpp::NodeOptions & options)
     declare_parameter("publish_foxglove_compressed_video", true);
   pImpl_->cxt_.foxglove_compressed_video_topic_ =
     declare_parameter("foxglove_compressed_video_topic", std::string("foxglove_compressed_video"));
+  pImpl_->cxt_.publish_image_raw_compressed_ =
+    declare_parameter("publish_image_raw_compressed", false);
 
   validate_parameters();
 
@@ -667,6 +700,9 @@ GSCamNode::GSCamNode(const rclcpp::NodeOptions & options)
         } else if (parameter.get_name() == "foxglove_compressed_video_topic") {
           pImpl_->cxt_.foxglove_compressed_video_topic_ = parameter.as_string();
           param_set = true;
+        } else if (parameter.get_name() == "publish_image_raw_compressed") {
+          pImpl_->cxt_.publish_image_raw_compressed_ = parameter.as_bool();
+          param_set = true;
         }
 
         if (param_set) {
@@ -710,6 +746,9 @@ void GSCamNode::validate_parameters()
   RCLCPP_INFO(
     get_logger(), "foxglove_compressed_video_topic = %s",
     pImpl_->cxt_.foxglove_compressed_video_topic_.c_str());
+  RCLCPP_INFO(
+    get_logger(), "publish_image_raw_compressed = %s",
+    pImpl_->cxt_.publish_image_raw_compressed_ ? "true" : "false");
 
   pImpl_->restart();
 }
