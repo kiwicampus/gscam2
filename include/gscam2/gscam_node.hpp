@@ -3,24 +3,23 @@
 
 #include "rclcpp/rclcpp.hpp"
 
-namespace gscam2
-{
+namespace gscam2 {
 
 class GSCamNode : public rclcpp::Node
 {
-  // Hide implementation
-  class impl;
-  std::unique_ptr<impl> pImpl_;
-  rclcpp::OnShutdownCallbackHandle on_shutdown_handle_;
+    // Hide implementation
+    class impl;
+    std::unique_ptr<impl> pImpl_;
+    rclcpp::OnShutdownCallbackHandle on_shutdown_handle_;
 
-  void validate_parameters();
+    void validate_parameters();
 
-public:
-  explicit GSCamNode(const rclcpp::NodeOptions & options);
+   public:
+    explicit GSCamNode(const rclcpp::NodeOptions& options);
 
-  ~GSCamNode() override;
+    ~GSCamNode() override;
 };
 
-}
+}  // namespace gscam2
 
-#endif // ifndef __GSCAM_GSCAM_H
+#endif  // ifndef __GSCAM_GSCAM_H

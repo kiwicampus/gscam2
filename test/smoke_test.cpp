@@ -3,8 +3,8 @@
 
 #include "gscam2/gscam_node.hpp"
 #include "gtest/gtest.h"
-#include "rclcpp/rclcpp.hpp"
 #include "rclcpp/node.hpp"
+#include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/image.hpp"
 #include "utils.hpp"
 
@@ -14,52 +14,52 @@ using namespace std::chrono_literals;
 // See GSCAM_CONFIG in CMakeLists.txt
 TEST(SmokeTest, smoke_test)  // NOLINT
 {
-  const size_t max_loops = 200;
-  const std::chrono::milliseconds sleep_per_loop = std::chrono::milliseconds(10);
-  const char * topic = "image_raw";
+    const size_t max_loops = 200;
+    const std::chrono::milliseconds sleep_per_loop = std::chrono::milliseconds(10);
+    const char* topic = "image_raw";
 
-  rclcpp::NodeOptions options{};
-  options.use_intra_process_comms(true);
-  auto cam_node = std::make_shared<gscam2::GSCamNode>(options);
-  auto sub_node = std::make_shared<rclcpp::Node>("sub_node", options);
+    rclcpp::NodeOptions options{};
+    options.use_intra_process_comms(true);
+    auto cam_node = std::make_shared<gscam2::GSCamNode>(options);
+    auto sub_node = std::make_shared<rclcpp::Node>("sub_node", options);
 
-  rclcpp::executors::SingleThreadedExecutor executor;
-  executor.add_node(cam_node);
-  executor.add_node(sub_node);
+    rclcpp::executors::SingleThreadedExecutor executor;
+    executor.add_node(cam_node);
+    executor.add_node(sub_node);
 
-  int count = 0;
+    int count = 0;
 
-  auto sub = sub_node->create_subscription<sensor_msgs::msg::Image>(
-    topic, 10,
-    [&](const sensor_msgs::msg::Image::ConstSharedPtr image)  // NOLINT
+    auto sub = sub_node->create_subscription<sensor_msgs::msg::Image>(
+        topic, 10,
+        [&](const sensor_msgs::msg::Image::ConstSharedPtr image)  // NOLINT
+        {
+            // Match GSCAM_CONFIG and param defaults
+            EXPECT_EQ(image->header.frame_id, "camera_frame");
+            EXPECT_EQ(image->width, 800u);
+            EXPECT_EQ(image->height, 600u);
+            EXPECT_EQ(image->encoding, sensor_msgs::image_encodings::RGB8);
+            EXPECT_EQ(image->data.size(), image->width * image->height * 3);
+            count++;
+        });
+
+    test_rclcpp::wait_for_subscriber(sub_node, topic);
+
+    EXPECT_EQ(0, count);
+
+    for (size_t loop = 0; count < 1 && loop < max_loops; ++loop)
     {
-      // Match GSCAM_CONFIG and param defaults
-      EXPECT_EQ(image->header.frame_id, "camera_frame");
-      EXPECT_EQ(image->width, 800u);
-      EXPECT_EQ(image->height, 600u);
-      EXPECT_EQ(image->encoding, sensor_msgs::image_encodings::RGB8);
-      EXPECT_EQ(image->data.size(), image->width * image->height * 3);
-      count++;
+        std::this_thread::sleep_for(sleep_per_loop);
+        executor.spin_some();
     }
-  );
 
-  test_rclcpp::wait_for_subscriber(sub_node, topic);
-
-  EXPECT_EQ(0, count);
-
-  for (size_t loop = 0; count < 1 && loop < max_loops; ++loop) {
-    std::this_thread::sleep_for(sleep_per_loop);
-    executor.spin_some();
-  }
-
-  EXPECT_GT(count, 0);
+    EXPECT_GT(count, 0);
 }
 
-int main(int argc, char ** argv)
+int main(int argc, char** argv)
 {
-  rclcpp::init(argc, argv);
-  testing::InitGoogleTest(&argc, argv);
-  int ret = RUN_ALL_TESTS();
-  rclcpp::shutdown();
-  return ret;
+    rclcpp::init(argc, argv);
+    testing::InitGoogleTest(&argc, argv);
+    int ret = RUN_ALL_TESTS();
+    rclcpp::shutdown();
+    return ret;
 }

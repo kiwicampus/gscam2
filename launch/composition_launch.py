@@ -11,31 +11,35 @@ from launch_ros.descriptions import ComposableNode
 
 
 def generate_launch_description():
-    gscam_config = 'videotestsrc pattern=snow ! video/x-raw,width=1280,height=720 ! videoconvert'
+    gscam_config = (
+        "videotestsrc pattern=snow ! video/x-raw,width=1280,height=720 ! videoconvert"
+    )
 
     container = ComposableNodeContainer(
-        name='my_container',
-        namespace='',
-        package='rclcpp_components',
-        executable='component_container',
+        name="my_container",
+        namespace="",
+        package="rclcpp_components",
+        executable="component_container",
         composable_node_descriptions=[
             ComposableNode(
-                package='gscam2',
-                plugin='gscam2::GSCamNode',
-                name='image_publisher',
-                parameters=[{
-                    'gscam_config': gscam_config,
-                }],
-                extra_arguments=[{'use_intra_process_comms': True}],
+                package="gscam2",
+                plugin="gscam2::GSCamNode",
+                name="image_publisher",
+                parameters=[
+                    {
+                        "gscam_config": gscam_config,
+                    }
+                ],
+                extra_arguments=[{"use_intra_process_comms": True}],
             ),
             ComposableNode(
-                package='gscam2',
-                plugin='gscam2::ImageSubscriberNode',
-                name='image_subscriber',
-                extra_arguments=[{'use_intra_process_comms': True}],
+                package="gscam2",
+                plugin="gscam2::ImageSubscriberNode",
+                name="image_subscriber",
+                extra_arguments=[{"use_intra_process_comms": True}],
             ),
         ],
-        output='screen',
+        output="screen",
     )
 
     return LaunchDescription([container])
