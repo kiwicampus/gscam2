@@ -213,7 +213,8 @@ bool GSCamNode::impl::create_pipeline()
     else if (cxt_.image_encoding_ == "h264")
     {
         // Foxglove h264 = Annex B (byte-stream), not avc/avcc.
-        caps = gst_caps_new_simple("video/x-h264", "stream-format", G_TYPE_STRING, "byte-stream", "alignment", G_TYPE_STRING, "au", nullptr);
+        caps = gst_caps_new_simple("video/x-h264", "stream-format", G_TYPE_STRING, "byte-stream", "alignment",
+                                   G_TYPE_STRING, "au", nullptr);
     }
 
     gst_app_sink_set_caps(GST_APP_SINK(sink_), caps);
