@@ -29,6 +29,7 @@ struct GSCamContext
   std::string camera_name_;       // Camera name
   std::string frame_id_;          // Camera frame id
   int64_t skip_{};                // Skip n frames, then send 1
+  double publish_rate_{0.0};      // Max publish rate in Hz, 0 = unlimited
 
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr
     on_set_parameters_callback_handle_;
@@ -67,6 +68,9 @@ class GSCamNode::impl
   // Counter used to implement the 'skip' parameter
   int64_t skip_count_;
 
+  // Timestamp of the last published frame, used for publish_rate throttling
+  rclcpp::Time last_publish_time_;
+
   // Publish images...
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr camera_pub_;
 
@@ -100,7 +104,8 @@ public:
     width_(0),
     height_(0),
     time_offset_(0),
-    skip_count_(0)
+    skip_count_(0),
+    last_publish_time_(0, 0, RCL_ROS_TIME)
   {
   }
 
@@ -350,6 +355,17 @@ void GSCamNode::impl::process_frame()
     skip_count_ = 0;  // process this frame, then start counting again
   }
 
+  // Implement publish rate throttling
+  if (cxt_.publish_rate_ > 0.0) {
+    rclcpp::Time now = node_->now();
+    rclcpp::Duration min_interval = rclcpp::Duration::from_seconds(1.0 / cxt_.publish_rate_);
+    if ((now - last_publish_time_) < min_interval) {
+      gst_sample_unref(sample);
+      return;
+    }
+    last_publish_time_ = now;
+  }
+
   GstBuffer * buf = gst_sample_get_buffer(sample);
   GstMemory * memory = gst_buffer_get_memory(buf, 0);
   GstMapInfo info;
@@ -526,8 +542,9 @@ void GSCamNode::impl::restart()
           RCLCPP_INFO(node_->get_logger(), "Thread running");    // NOLINT
         }
 
-        // reset skipping state when (re)starting
+        // reset skipping/throttling state when (re)starting
         skip_count_ = 0;
+        last_publish_time_ = rclcpp::Time(0, 0, RCL_ROS_TIME);
 
         while (!stop_signal_ && rclcpp::ok()) {
           process_frame();
@@ -568,6 +585,7 @@ GSCamNode::GSCamNode(const rclcpp::NodeOptions & options)
   pImpl_->cxt_.camera_name_ = declare_parameter("camera_name", "");
   pImpl_->cxt_.frame_id_ = declare_parameter("frame_id", "camera_frame");
   pImpl_->cxt_.skip_ = declare_parameter("skip", 0);
+  pImpl_->cxt_.publish_rate_ = declare_parameter("publish_rate", 0.0);
 
   validate_parameters();
 
@@ -610,6 +628,9 @@ GSCamNode::GSCamNode(const rclcpp::NodeOptions & options)
         } else if (parameter.get_name() == "skip") {
           pImpl_->cxt_.skip_ = parameter.as_int();
           param_set = true;
+        } else if (parameter.get_name() == "publish_rate") {
+          pImpl_->cxt_.publish_rate_ = parameter.as_double();
+          param_set = true;
         }
 
         if (param_set) {
@@ -647,6 +668,7 @@ void GSCamNode::validate_parameters()
   RCLCPP_INFO(get_logger(), "camera_name = %s", pImpl_->cxt_.camera_name_.c_str());
   RCLCPP_INFO(get_logger(), "frame_id = %s", pImpl_->cxt_.frame_id_.c_str());
   RCLCPP_INFO(get_logger(), "skip = %ld", pImpl_->cxt_.skip_);
+  RCLCPP_INFO(get_logger(), "publish_rate = %.1f Hz (0 = unlimited)", pImpl_->cxt_.publish_rate_);
 
   pImpl_->restart();
 }
